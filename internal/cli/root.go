@@ -194,8 +194,20 @@ func cmdSources() *cobra.Command {
 				fmt.Println("Tidak ada sources yang tersedia.")
 				return nil
 			}
-			fmt.Printf("%-6s %-15s %-22s %-8s %-6s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "LTS", "OS", "URL")
-			fmt.Println("-------------------------------------------------------------------------------------------------------")
+
+			// Urutkan sources: Vendor A-Z, Versi (desc), Build (desc)
+			config.SortSources(sources)
+
+			isDevMode := !strings.EqualFold(config.Mode, "prod")
+
+			if isDevMode {
+				fmt.Printf("%-6s %-15s %-22s %-10s %-12s %-6s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS", "URL")
+				fmt.Println("-------------------------------------------------------------------------------------------------------------------")
+			} else {
+				fmt.Printf("%-6s %-15s %-22s %-10s %-12s %-6s %-8s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS")
+				fmt.Println("-----------------------------------------------------------------------------------------")
+			}
+
 			for _, s := range sources {
 				def := "  "
 				if s.Version == cfg.DefaultVersion {
@@ -205,10 +217,20 @@ func cmdSources() *cobra.Command {
 				if s.LTS {
 					isLTS = "yes"
 				}
-				fmt.Printf("%s     %-15s %-22s %-8s %-6s %-8s %s\n", def, s.Vendor, s.Name, s.Version, isLTS, s.OS, s.URL)
+				build := s.Build
+				if build == "" {
+					build = "-"
+				}
+
+				if isDevMode {
+					fmt.Printf("%s     %-15s %-22s %-10s %-12s %-6s %-8s %s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS, s.URL)
+				} else {
+					fmt.Printf("%s     %-15s %-22s %-10s %-12s %-6s %-8s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS)
+				}
 			}
 			return nil
 		},
 	}
 }
+
 

@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
+
+// Mode menyimpan mode build ("dev" atau "prod").
+// Dapat diubah saat kompilasi via: -ldflags "-X javawrapper/internal/config.Mode=prod"
+var Mode = "dev"
 
 // JDKSource mendefinisikan sumber download JDK yang tersedia.
 type JDKSource struct {
 	Vendor  string `json:"vendor"`            // nama vendor tanpa spasi, misal "JetBrains", "Eclipse"
 	Name    string `json:"name"`              // nama distribusi, misal "JetBrains Runtime"
-	Version string `json:"version"`           // versi JDK, misal "17", "21"
+	Version string `json:"version"`           // versi JDK, misal "25.0.4", "21", "17"
+	Build   string `json:"build,omitempty"`   // nomor build, misal "b508.27", "b400"
 	LTS     bool   `json:"lts"`              // true jika versi ini adalah Long-Term Support
 	URL     string `json:"url"`               // URL download tar.gz
 	OS      string `json:"os,omitempty"`      // target OS: "linux", "windows", "darwin"
@@ -63,7 +69,8 @@ func defaultSources() []JDKSource {
 		{
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
-			Version: "21",
+			Version: "21.0.3",
+			Build:   "b465.3",
 			LTS:     true,
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
 			OS:      "linux",
@@ -72,7 +79,8 @@ func defaultSources() []JDKSource {
 		{
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
-			Version: "17",
+			Version: "17.0.10",
+			Build:   "b1087.23",
 			LTS:     true,
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
 			OS:      "linux",
@@ -281,6 +289,79 @@ func compareVersion(a, b string) int {
 	return parseNum(a) - parseNum(b)
 }
 
+// CompareVersions membandingkan dua versi numerik seperti "25.0.4" vs "25.0.3" atau "21" vs "17".
+// Return >0 jika a > b, <0 jika a < b, 0 jika sama.
+func CompareVersions(a, b string) int {
+	partsA := strings.Split(a, ".")
+	partsB := strings.Split(b, ".")
+
+	maxLen := len(partsA)
+	if len(partsB) > maxLen {
+		maxLen = len(partsB)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		numA := 0
+		numB := 0
+		if i < len(partsA) {
+			numA = parseLeadingInt(partsA[i])
+		}
+		if i < len(partsB) {
+			numB = parseLeadingInt(partsB[i])
+		}
+		if numA != numB {
+			return numA - numB
+		}
+	}
+	return 0
+}
+
+func parseLeadingInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			break
+		}
+	}
+	return n
+}
+
+// CompareBuilds membandingkan dua build number seperti "b508.27" vs "b400".
+// Return >0 jika a > b, <0 jika a < b, 0 jika sama.
+func CompareBuilds(a, b string) int {
+	cleanA := strings.TrimPrefix(strings.ToLower(a), "b")
+	cleanB := strings.TrimPrefix(strings.ToLower(b), "b")
+	return CompareVersions(cleanA, cleanB)
+}
+
+// SortSources mengurutkan list JDKSource berdasarkan:
+// 1. Vendor (ascending, A-Z)
+// 2. Versi (descending, terbaru ke terlama)
+// 3. Build (descending, tertinggi ke terendah)
+func SortSources(sources []JDKSource) {
+	sort.SliceStable(sources, func(i, j int) bool {
+		// 1. Vendor (ascending, A-Z)
+		vendorI := strings.ToLower(sources[i].Vendor)
+		vendorJ := strings.ToLower(sources[j].Vendor)
+		if vendorI != vendorJ {
+			return vendorI < vendorJ
+		}
+		// 2. Versi (descending)
+		cmpVer := CompareVersions(sources[i].Version, sources[j].Version)
+		if cmpVer != 0 {
+			return cmpVer > 0
+		}
+		// 3. Build (descending)
+		cmpBuild := CompareBuilds(sources[i].Build, sources[j].Build)
+		if cmpBuild != 0 {
+			return cmpBuild > 0
+		}
+		return false
+	})
+}
+
 // IsInstalled mengecek apakah versi tertentu sudah terinstall.
 func (c *Config) IsInstalled(version string) bool {
 	for _, v := range c.Installed {
@@ -290,3 +371,4 @@ func (c *Config) IsInstalled(version string) bool {
 	}
 	return false
 }
+

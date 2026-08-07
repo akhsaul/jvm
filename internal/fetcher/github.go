@@ -38,10 +38,10 @@ func FetchJetBrainsSources(gitHTTPURL string) ([]config.JDKSource, error) {
 	return ParseJetBrainsGitRefs(resp.Body)
 }
 
-// ParseJetBrainsGitRefs memuat data dari reader dan mengekstrak JDKSource.
+// ParseJetBrainsGitRefs memuat data dari reader dan mengekstrak JDKSource untuk semua tag.
 func ParseJetBrainsGitRefs(r io.Reader) ([]config.JDKSource, error) {
 	scanner := bufio.NewScanner(r)
-	seenMajor := make(map[string]bool)
+	seenTag := make(map[string]bool)
 	var sources []config.JDKSource
 
 	for scanner.Scan() {
@@ -54,24 +54,26 @@ func ParseJetBrainsGitRefs(r io.Reader) ([]config.JDKSource, error) {
 		fullTag := matches[1]  // jbr-release-21.0.3b465.3
 		major := matches[2]    // 21
 		verMinor := matches[3] // 0.3
-		build := matches[4]    // 465.3
+		buildNum := matches[4] // 465.3
 
-		// Hanya ambil rilis terbaru untuk setiap major version
-		if seenMajor[major] {
+		// Cegah duplikasi tag yang persis sama
+		if seenTag[fullTag] {
 			continue
 		}
-		seenMajor[major] = true
+		seenTag[fullTag] = true
 
 		fullVersion := major
 		if verMinor != "" {
 			fullVersion = fmt.Sprintf("%s.%s", major, verMinor)
 		}
 
+		buildStr := fmt.Sprintf("b%s", buildNum)
+
 		// Format URL download standar JetBrains Runtime
 		// Contoh: https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz
 		downloadURL := fmt.Sprintf(
 			"https://github.com/JetBrains/JetBrainsRuntime/releases/download/%s/jbr_jcef-%s-linux-x64-b%s.tar.gz",
-			fullTag, fullVersion, build,
+			fullTag, fullVersion, buildNum,
 		)
 
 		isLTS := major == "17" || major == "21" || major == "11" || major == "8"
@@ -79,7 +81,8 @@ func ParseJetBrainsGitRefs(r io.Reader) ([]config.JDKSource, error) {
 		sources = append(sources, config.JDKSource{
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
-			Version: major,
+			Version: fullVersion,
+			Build:   buildStr,
 			LTS:     isLTS,
 			URL:     downloadURL,
 			OS:      "linux",

@@ -255,3 +255,34 @@ func TestFindLatestLTS(t *testing.T) {
 	}
 }
 
+func TestSortSources(t *testing.T) {
+	sources := []config.JDKSource{
+		{Vendor: "Zulu", Version: "25", Build: "b300"},
+		{Vendor: "JetBrains", Version: "17", Build: "b100"},
+		{Vendor: "JetBrains", Version: "25.0.4", Build: "b400"},
+		{Vendor: "JetBrains", Version: "25.0.4", Build: "b508.27"},
+	}
+
+	config.SortSources(sources)
+
+	// Urutan yang diharapkan:
+	// 0: JetBrains 25.0.4 b508.27
+	// 1: JetBrains 25.0.4 b400
+	// 2: JetBrains 17 b100
+	// 3: Zulu 25 b300
+
+	if sources[0].Vendor != "JetBrains" || sources[0].Version != "25.0.4" || sources[0].Build != "b508.27" {
+		t.Errorf("sources[0] unexpected: %+v", sources[0])
+	}
+	if sources[1].Vendor != "JetBrains" || sources[1].Version != "25.0.4" || sources[1].Build != "b400" {
+		t.Errorf("sources[1] unexpected: %+v", sources[1])
+	}
+	if sources[2].Vendor != "JetBrains" || sources[2].Version != "17" || sources[2].Build != "b100" {
+		t.Errorf("sources[2] unexpected: %+v", sources[2])
+	}
+	if sources[3].Vendor != "Zulu" || sources[3].Version != "25" || sources[3].Build != "b300" {
+		t.Errorf("sources[3] unexpected: %+v", sources[3])
+	}
+}
+
+

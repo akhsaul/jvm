@@ -27,29 +27,29 @@ func TestFetchJetBrainsSources(t *testing.T) {
 		t.Fatalf("FetchJetBrainsSources error: %v", err)
 	}
 
-	if len(sources) != 3 {
-		t.Fatalf("diharapkan 3 sources (v25, v21, v17), didapat %d", len(sources))
+	if len(sources) != 4 {
+		t.Fatalf("diharapkan 4 sources, didapat %d", len(sources))
 	}
 
-	// Cek v25
-	s25 := sources[0]
-	if s25.Version != "25" || s25.Vendor != "JetBrains" || s25.LTS {
-		t.Errorf("v25 unexpected: %+v", s25)
+	// Cek v25.0.3 b480.61
+	s25a := sources[0]
+	if s25a.Version != "25.0.3" || s25a.Build != "b480.61" || s25a.Vendor != "JetBrains" || s25a.LTS {
+		t.Errorf("s25a unexpected: %+v", s25a)
 	}
 
-	// Cek v21
-	s21 := sources[1]
-	if s21.Version != "21" || s21.Vendor != "JetBrains" || !s21.LTS {
+	// Cek v25.0.3 b496.62
+	s25b := sources[1]
+	if s25b.Version != "25.0.3" || s25b.Build != "b496.62" {
+		t.Errorf("s25b unexpected: %+v", s25b)
+	}
+
+	// Cek v21.0.3
+	s21 := sources[2]
+	if s21.Version != "21.0.3" || s21.Build != "b465.3" || !s21.LTS {
 		t.Errorf("v21 unexpected: %+v", s21)
 	}
 	expectedURL21 := "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz"
 	if s21.URL != expectedURL21 {
 		t.Errorf("v21 URL = %s, want %s", s21.URL, expectedURL21)
-	}
-
-	// Cek v17
-	s17 := sources[2]
-	if s17.Version != "17" || s17.Vendor != "JetBrains" || !s17.LTS {
-		t.Errorf("v17 unexpected: %+v", s17)
 	}
 }
