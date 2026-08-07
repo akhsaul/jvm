@@ -19,6 +19,7 @@ func TestSaveAndLoadFrom_JSON(t *testing.T) {
 		ActiveVersion:  "",
 		Sources: []config.JDKSource{
 			{
+				Vendor:  "JetBrains",
 				Name:    "JetBrains Runtime",
 				Version: "21",
 				URL:     "https://example.com/jbr21.tar.gz",
@@ -64,8 +65,8 @@ func TestConfig_GetURLForVersion(t *testing.T) {
 	cfg := &config.Config{
 		DefaultVersion: "21",
 		Sources: []config.JDKSource{
-			{Name: "JBR", Version: "17", URL: "https://example.com/jbr17.tar.gz", OS: "linux"},
-			{Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz", OS: "linux"},
+			{Vendor: "Oracle", Name: "OpenJDK", Version: "17", URL: "https://example.com/jbr17.tar.gz", OS: "linux"},
+			{Vendor: "JetBrains", Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz", OS: "linux"},
 		},
 	}
 
@@ -92,7 +93,7 @@ func TestConfig_GetSourceByVersion(t *testing.T) {
 	cfg := &config.Config{
 		DefaultVersion: "21",
 		Sources: []config.JDKSource{
-			{Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz"},
+			{Vendor: "JetBrains", Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz"},
 		},
 	}
 
@@ -120,5 +121,49 @@ func TestConfig_IsInstalled(t *testing.T) {
 	}
 	if cfg.IsInstalled("21") {
 		t.Error("IsInstalled(21) = true, want false")
+	}
+}
+
+func TestVendorValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := tmpDir + "/jwrapper.json"
+
+	// Vendor dengan spasi harus gagal
+	cfgBad := &config.Config{
+		InstallDir:     tmpDir,
+		DefaultVersion: "21",
+		Sources: []config.JDKSource{
+			{Vendor: "Jet Brains", Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz"},
+		},
+		Installed: []config.JDKInstalled{},
+	}
+	if err := config.SaveTo(cfgBad, cfgPath); err == nil {
+		t.Error("SaveTo dengan vendor spasi harus mengembalikan error, tapi tidak ada error")
+	}
+
+	// Vendor tanpa spasi harus sukses
+	cfgGood := &config.Config{
+		InstallDir:     tmpDir,
+		DefaultVersion: "21",
+		Sources: []config.JDKSource{
+			{Vendor: "JetBrains", Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz"},
+		},
+		Installed: []config.JDKInstalled{},
+	}
+	if err := config.SaveTo(cfgGood, cfgPath); err != nil {
+		t.Errorf("SaveTo dengan vendor valid gagal: %v", err)
+	}
+
+	// Vendor kosong harus gagal
+	cfgEmpty := &config.Config{
+		InstallDir:     tmpDir,
+		DefaultVersion: "21",
+		Sources: []config.JDKSource{
+			{Vendor: "", Name: "JBR", Version: "21", URL: "https://example.com/jbr21.tar.gz"},
+		},
+		Installed: []config.JDKInstalled{},
+	}
+	if err := config.SaveTo(cfgEmpty, cfgPath); err == nil {
+		t.Error("SaveTo dengan vendor kosong harus mengembalikan error, tapi tidak ada error")
 	}
 }

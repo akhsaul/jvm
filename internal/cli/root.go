@@ -134,14 +134,14 @@ func cmdSources() *cobra.Command {
 				fmt.Println("Tidak ada sources di jwrapper.json.")
 				return nil
 			}
-			fmt.Printf("%-6s %-20s %-8s %-8s %s\n", "Default", "Nama", "Versi", "OS", "URL")
-			fmt.Println("------------------------------------------------------------------------")
+			fmt.Printf("%-6s %-15s %-22s %-8s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "OS", "URL")
+			fmt.Println("----------------------------------------------------------------------------------------------")
 			for _, s := range cfg.Sources {
 				def := "  "
 				if s.Version == cfg.DefaultVersion {
 					def = "* "
 				}
-				fmt.Printf("%s     %-20s %-8s %-8s %s\n", def, s.Name, s.Version, s.OS, s.URL)
+				fmt.Printf("%s     %-15s %-22s %-8s %-8s %s\n", def, s.Vendor, s.Name, s.Version, s.OS, s.URL)
 			}
 			return nil
 		},

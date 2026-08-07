@@ -5,16 +5,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // JDKSource mendefinisikan sumber download JDK yang tersedia.
 type JDKSource struct {
+	Vendor  string `json:"vendor"`            // nama vendor tanpa spasi, misal "JetBrains", "Eclipse"
 	Name    string `json:"name"`              // nama distribusi, misal "JetBrains Runtime"
 	Version string `json:"version"`           // versi JDK, misal "17", "21"
 	URL     string `json:"url"`               // URL download tar.gz
 	OS      string `json:"os,omitempty"`      // target OS: "linux", "windows", "darwin"
 	Arch    string `json:"arch,omitempty"`    // target arch: "x64", "aarch64"
 	Note    string `json:"note,omitempty"`    // catatan opsional
+}
+
+// Validate memastikan field Vendor tidak mengandung spasi.
+func (s *JDKSource) Validate() error {
+	if strings.Contains(s.Vendor, " ") {
+		return fmt.Errorf("vendor %q tidak boleh mengandung spasi", s.Vendor)
+	}
+	if s.Vendor == "" {
+		return fmt.Errorf("vendor tidak boleh kosong")
+	}
+	return nil
 }
 
 // JDKInstalled merepresentasikan JDK yang sudah terinstall di sistem.
@@ -48,6 +61,7 @@ type Config struct {
 func defaultSources() []JDKSource {
 	return []JDKSource{
 		{
+			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
 			Version: "21",
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
@@ -56,6 +70,7 @@ func defaultSources() []JDKSource {
 			Note:    "JBR with JCEF for Linux x64",
 		},
 		{
+			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
 			Version: "17",
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
@@ -108,7 +123,14 @@ func (c *Config) Save() error {
 }
 
 // SaveTo menyimpan config ke path yang diberikan (berguna untuk testing).
+// Akan mengembalikan error jika ada JDKSource dengan vendor yang mengandung spasi.
 func SaveTo(c *Config, path string) error {
+	// Validasi semua sources sebelum disimpan
+	for i, s := range c.Sources {
+		if err := s.Validate(); err != nil {
+			return fmt.Errorf("sources[%d]: %w", i, err)
+		}
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("gagal marshal config: %w", err)

@@ -51,6 +51,7 @@ func setupTestConfig(t *testing.T, installDir string) string {
 		ActiveVersion:  "",
 		Sources: []config.JDKSource{
 			{
+				Vendor:  "MockVendor",
 				Name:    "Mock JDK",
 				Version: "test-17",
 				URL:     "http://mock-server/jdk.tar.gz",
