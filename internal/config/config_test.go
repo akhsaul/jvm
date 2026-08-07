@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"javawrapper/internal/config"
@@ -170,80 +171,81 @@ func TestVendorValidation(t *testing.T) {
 
 func testSources() []config.JDKSource {
 	return []config.JDKSource{
-		{Vendor: "JetBrains", Name: "JBR", Version: "17", LTS: true, URL: "https://example.com/jbr17.tar.gz"},
-		{Vendor: "JetBrains", Name: "JBR", Version: "21", LTS: true, URL: "https://example.com/jbr21.tar.gz"},
-		{Vendor: "JetBrains", Name: "JBR", Version: "25", LTS: false, URL: "https://example.com/jbr25.tar.gz"},
-		{Vendor: "Eclipse", Name: "Temurin", Version: "21", LTS: true, URL: "https://example.com/temurin21.tar.gz"},
+		{Vendor: "JetBrains", Name: "JBR", Version: "17.0.10", Build: "b1087.23", LTS: true, URL: "https://example.com/jbr17.tar.gz"},
+		{Vendor: "JetBrains", Name: "JBR", Version: "21.0.3", Build: "b465.3", LTS: true, URL: "https://example.com/jbr21.tar.gz"},
+		{Vendor: "JetBrains", Name: "JBR", Version: "25.0.4", Build: "b508.27", LTS: false, URL: "https://example.com/jbr25.tar.gz"},
+		{Vendor: "JetBrains", Name: "JBR", Version: "25.0.4", Build: "b400", LTS: false, URL: "https://example.com/jbr25b400.tar.gz"},
+		{Vendor: "Eclipse", Name: "Temurin", Version: "21", Build: "b1", LTS: true, URL: "https://example.com/temurin21.tar.gz"},
 	}
 }
 
 func TestFindSource(t *testing.T) {
 	cfg := &config.Config{DefaultVersion: "21", Sources: testSources()}
 
-	// Tanpa vendor — cocok berdasarkan versi saja
-	src, err := cfg.FindSource("21", "")
+	// 1. Match versi '21' dengan vendor 'jetbrains' → 21.0.3 (JBR)
+	src, err := cfg.FindSource("21", "jetbrains", "")
 	if err != nil {
-		t.Fatalf("FindSource(21, '') error: %v", err)
+		t.Fatalf("FindSource(21, jetbrains, '') error: %v", err)
 	}
-	if src.Version != "21" {
-		t.Errorf("src.Version = %s, want 21", src.Version)
+	if src.Version != "21.0.3" {
+		t.Errorf("src.Version = %s, want 21.0.3", src.Version)
 	}
 
-	// Dengan vendor case-insensitive: "jetbrains" harus cocok dengan "JetBrains"
-	src, err = cfg.FindSource("25", "jetbrains")
+	// 2. Major '25' cocok dengan '25.0.4' (build tertinggi b508.27)
+	src, err = cfg.FindSource("25", "jetbrains", "")
 	if err != nil {
-		t.Fatalf("FindSource(25, jetbrains) error: %v", err)
+		t.Fatalf("FindSource(25, jetbrains, '') error: %v", err)
 	}
-	if src.Vendor != "JetBrains" {
-		t.Errorf("src.Vendor = %s, want JetBrains", src.Vendor)
+	if src.Version != "25.0.4" || src.Build != "b508.27" {
+		t.Errorf("src = %+v, want 25.0.4 b508.27", src)
 	}
 
-	// Vendor cocok case-insensitive: "JETBRAINS"
-	src, err = cfg.FindSource("17", "JETBRAINS")
+	// 3. Match spesifik build 'b400'
+	src, err = cfg.FindSource("25", "jetbrains", "b400")
 	if err != nil {
-		t.Fatalf("FindSource(17, JETBRAINS) error: %v", err)
+		t.Fatalf("FindSource(25, jetbrains, b400) error: %v", err)
 	}
-	if src.Version != "17" {
-		t.Errorf("src.Version = %s, want 17", src.Version)
+	if src.Build != "b400" {
+		t.Errorf("src.Build = %s, want b400", src.Build)
 	}
 
-	// Versi tidak ada → error
-	_, err = cfg.FindSource("99", "")
+	// 4. Build tidak ada → return error
+	_, err = cfg.FindSource("25", "", "b508.7")
 	if err == nil {
-		t.Error("FindSource(99, '') harus error, tapi tidak ada error")
+		t.Error("FindSource dengan build non-existent harus error")
 	}
 
-	// Vendor tidak cocok → error
-	_, err = cfg.FindSource("21", "Oracle")
+	// 5. Versi tidak ada → error
+	_, err = cfg.FindSource("99", "", "")
 	if err == nil {
-		t.Error("FindSource(21, Oracle) harus error karena tidak ada Oracle di sources")
+		t.Error("FindSource(99, '', '') harus error")
 	}
 }
 
 func TestFindLatestLTS(t *testing.T) {
 	cfg := &config.Config{DefaultVersion: "21", Sources: testSources()}
 
-	// Tanpa filter vendor → LTS tertinggi adalah v21
+	// Tanpa filter vendor → LTS tertinggi adalah v21.0.3
 	src, err := cfg.FindLatestLTS("")
 	if err != nil {
 		t.Fatalf("FindLatestLTS('') error: %v", err)
 	}
-	if src.Version != "21" {
-		t.Errorf("FindLatestLTS('') Version = %s, want 21", src.Version)
+	if src.Version != "21.0.3" {
+		t.Errorf("FindLatestLTS('') Version = %s, want 21.0.3", src.Version)
 	}
 
-	// Filter vendor JetBrains (case-insensitive) → LTS tertinggi dari JetBrains adalah v21
+	// Filter vendor JetBrains (case-insensitive) → LTS tertinggi dari JetBrains adalah v21.0.3
 	src, err = cfg.FindLatestLTS("jetbrains")
 	if err != nil {
 		t.Fatalf("FindLatestLTS('jetbrains') error: %v", err)
 	}
-	if src.Version != "21" || src.Vendor != "JetBrains" {
-		t.Errorf("FindLatestLTS('jetbrains') = %+v, want JetBrains v21", src)
+	if src.Version != "21.0.3" || src.Vendor != "JetBrains" {
+		t.Errorf("FindLatestLTS('jetbrains') = %+v, want JetBrains v21.0.3", src)
 	}
 
-	// v25 tidak LTS → tidak boleh terpilih walaupun versi tertinggi
+	// v25.0.4 tidak LTS → tidak boleh terpilih walaupun versi tertinggi
 	for _, s := range cfg.Sources {
-		if s.Version == "25" && s.LTS {
+		if strings.HasPrefix(s.Version, "25") && s.LTS {
 			t.Error("v25 seharusnya tidak LTS di testSources")
 		}
 	}

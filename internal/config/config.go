@@ -52,6 +52,9 @@ type Config struct {
 	// DefaultVersion adalah versi JDK yang digunakan secara default saat install.
 	DefaultVersion string `json:"default_version"`
 
+	// LTSVersions adalah daftar versi mayor yang tergolong LTS.
+	LTSVersions []string `json:"lts_versions"`
+
 	// ActiveVersion adalah versi JDK yang sedang aktif digunakan.
 	ActiveVersion string `json:"active_version"`
 
@@ -92,7 +95,14 @@ func VersionInstallDir(version string) string {
 
 // Load memuat konfigurasi dari jwrapper.json di samping binary.
 func Load() (*Config, error) {
-	return LoadFrom(defaultConfigPath())
+	cfg, err := LoadFrom(defaultConfigPath())
+	if err != nil {
+		return nil, err
+	}
+	if len(cfg.LTSVersions) == 0 {
+		cfg.LTSVersions = []string{"8", "11", "17", "21"}
+	}
+	return cfg, nil
 }
 
 // LoadOrCreate memuat konfigurasi yang ada, atau membuat yang baru dengan nilai default.
@@ -106,6 +116,7 @@ func LoadOrCreate() (*Config, error) {
 	cfg = &Config{
 		InstallDir:     filepath.Join(dir, "versions", "jdk"),
 		DefaultVersion: "21",
+		LTSVersions:    []string{"8", "11", "17", "21"},
 		ActiveVersion:  "",
 		Sources:        defaultSources(),
 		Installed:      []JDKInstalled{},
@@ -189,37 +200,74 @@ func (c *Config) HasVendorSources(vendor string) bool {
 	return false
 }
 
-// FindSource mencari JDKSource berdasarkan versi dan (opsional) vendor dalam c.Sources.
-func (c *Config) FindSource(version, vendor string) (*JDKSource, error) {
-	return FindSourceIn(c.Sources, version, vendor, c.DefaultVersion)
+// FindSource mencari JDKSource berdasarkan versi dan (opsional) vendor/build dalam c.Sources.
+func (c *Config) FindSource(version, vendor, build string) (*JDKSource, error) {
+	return FindSourceIn(c.Sources, version, vendor, build, c.DefaultVersion)
 }
 
 // FindSourceIn mencari JDKSource dari slice sources yang diberikan.
-func FindSourceIn(sources []JDKSource, version, vendor, defaultVersion string) (*JDKSource, error) {
+// Logika matching:
+// - versi '25' cocok dengan versi '25' atau versi minor seperti '25.0.4'
+// - versi '25.0.4' cocok persis dengan '25.0.4'
+// - build 'b508.7' cocok persis dengan build (case-insensitive)
+func FindSourceIn(sources []JDKSource, version, vendor, build, defaultVersion string) (*JDKSource, error) {
 	if version == "" || version == "latest" {
 		version = defaultVersion
 	}
-	vendorLower := strings.ToLower(vendor)
 
-	var candidates []*JDKSource
-	for i := range sources {
-		s := &sources[i]
-		if s.Version != version {
+	vendorLower := strings.ToLower(vendor)
+	buildLower := strings.TrimPrefix(strings.ToLower(build), "b")
+
+	var candidates []JDKSource
+	for _, s := range sources {
+		// Matching Versi:
+		// 1. Persis sama (misal "25.0.4" == "25.0.4" atau "25" == "25")
+		// 2. Prefix versi mayor (misal requested "25" cocok dengan "25.0.4" atau "25.0.3")
+		matchVer := false
+		if s.Version == version {
+			matchVer = true
+		} else if strings.HasPrefix(s.Version, version+".") {
+			matchVer = true
+		}
+
+		if !matchVer {
 			continue
 		}
+
+		// Matching Vendor:
 		if vendor != "" && !strings.EqualFold(s.Vendor, vendorLower) {
 			continue
 		}
+
+		// Matching Build:
+		if build != "" {
+			cleanSBuild := strings.TrimPrefix(strings.ToLower(s.Build), "b")
+			if cleanSBuild != buildLower && !strings.EqualFold(s.Build, build) {
+				continue
+			}
+		}
+
 		candidates = append(candidates, s)
 	}
 
 	if len(candidates) == 0 {
+		var detail []string
 		if vendor != "" {
-			return nil, fmt.Errorf("tidak ditemukan JDK versi %s dengan vendor %q di sources", version, vendor)
+			detail = append(detail, fmt.Sprintf("vendor %q", vendor))
 		}
-		return nil, fmt.Errorf("tidak ditemukan JDK versi %s di sources", version)
+		if build != "" {
+			detail = append(detail, fmt.Sprintf("build %q", build))
+		}
+		detailMsg := ""
+		if len(detail) > 0 {
+			detailMsg = fmt.Sprintf(" dengan %s", strings.Join(detail, " dan "))
+		}
+		return nil, fmt.Errorf("tidak ditemukan JDK versi %s%s yang cocok di sources", version, detailMsg)
 	}
-	return candidates[0], nil
+
+	// Urutkan kandidat agar versi & build terbaru berada di posisi pertama
+	SortSources(candidates)
+	return &candidates[0], nil
 }
 
 // FindLatestLTS mencari source LTS dengan versi tertinggi dalam c.Sources.

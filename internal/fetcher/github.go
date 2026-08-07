@@ -20,7 +20,7 @@ var reJBRTag = regexp.MustCompile(`refs/tags/(jbr-release-(\d+)(?:\.([0-9.]+))?b
 
 // FetchJetBrainsSources mengambil seluruh tag release dari GitHub via Git Smart HTTP Protocol
 // tanpa menyentuh GitHub REST API.
-func FetchJetBrainsSources(gitHTTPURL string) ([]config.JDKSource, error) {
+func FetchJetBrainsSources(gitHTTPURL string, ltsVersions []string) ([]config.JDKSource, error) {
 	if gitHTTPURL == "" {
 		gitHTTPURL = DefaultJetBrainsGitURL
 	}
@@ -35,11 +35,15 @@ func FetchJetBrainsSources(gitHTTPURL string) ([]config.JDKSource, error) {
 		return nil, fmt.Errorf("git http request gagal dengan status %s", resp.Status)
 	}
 
-	return ParseJetBrainsGitRefs(resp.Body)
+	return ParseJetBrainsGitRefs(resp.Body, ltsVersions)
 }
 
 // ParseJetBrainsGitRefs memuat data dari reader dan mengekstrak JDKSource untuk semua tag.
-func ParseJetBrainsGitRefs(r io.Reader) ([]config.JDKSource, error) {
+func ParseJetBrainsGitRefs(r io.Reader, ltsVersions []string) ([]config.JDKSource, error) {
+	if len(ltsVersions) == 0 {
+		ltsVersions = []string{"8", "11", "17", "21"}
+	}
+
 	scanner := bufio.NewScanner(r)
 	seenTag := make(map[string]bool)
 	var sources []config.JDKSource
@@ -76,7 +80,13 @@ func ParseJetBrainsGitRefs(r io.Reader) ([]config.JDKSource, error) {
 			fullTag, fullVersion, buildNum,
 		)
 
-		isLTS := major == "17" || major == "21" || major == "11" || major == "8"
+		isLTS := false
+		for _, lts := range ltsVersions {
+			if lts == major {
+				isLTS = true
+				break
+			}
+		}
 
 		sources = append(sources, config.JDKSource{
 			Vendor:  "JetBrains",

@@ -50,7 +50,7 @@ func resolveEffectiveSources(cfg *config.Config, targetVendor string) []config.J
 	// Jika vendor JetBrains tidak ada di config (atau targetVendor kosong / jetbrains), fetch dari GitHub
 	effective := append([]config.JDKSource{}, cfg.Sources...)
 	if targetVendor == "" || strings.EqualFold(targetVendor, "jetbrains") {
-		ghSources, err := fetcher.FetchJetBrainsSources("")
+		ghSources, err := fetcher.FetchJetBrainsSources("", cfg.LTSVersions)
 		if err == nil && len(ghSources) > 0 {
 			effective = append(effective, ghSources...)
 		}
@@ -75,6 +75,7 @@ func cmdInit() *cobra.Command {
 			}
 			fmt.Printf("✓ Config disimpan di: %s\n", cfg.InstallDir)
 			fmt.Printf("  Default versi  : %s\n", cfg.DefaultVersion)
+			fmt.Printf("  Daftar LTS     : %v\n", cfg.LTSVersions)
 			fmt.Printf("  Jumlah sources : %d\n", len(cfg.Sources))
 			return cfg.Save()
 		},
@@ -83,18 +84,20 @@ func cmdInit() *cobra.Command {
 
 func cmdInstall() *cobra.Command {
 	var vendor string
+	var build string
 	var lts bool
 
 	cmd := &cobra.Command{
 		Use:   "install [versi]",
 		Short: "Download dan install JDK",
-		Long: `Download dan install JDK dari daftar sources di jwrapper.json.
+		Long: `Download dan install JDK dari daftar sources di jwrapper.json atau GitHub.
 
 Contoh:
-  jwrapper install 21                        # install versi 21 (vendor apapun)
-  jwrapper install 25 --vendor jetbrains     # install versi 25 dari JetBrains (case-insensitive)
-  jwrapper install --lts                     # install LTS terbaru
-  jwrapper install --lts --vendor jetbrains  # install LTS terbaru dari JetBrains`,
+  jwrapper install 25                        # match versi 25 terbaru (25.0.4 b508.27)
+  jwrapper install 25.0.4                    # match versi 25.0.4 terbaru
+  jwrapper install 25 --build b508.7         # match versi 25 dan build b508.7
+  jwrapper install 25 --vendor jetbrains     # match versi 25 dari vendor JetBrains
+  jwrapper install --lts                     # install LTS terbaru`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -102,7 +105,7 @@ Contoh:
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
 
-			// Ambil sources efektif (jika vendor JetBrains ada di json -> user override, jika tidak -> fetch GitHub)
+			// Ambil sources efektif
 			effectiveSources := resolveEffectiveSources(cfg, vendor)
 
 			var src *config.JDKSource
@@ -112,13 +115,13 @@ Contoh:
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s)\n", src.Vendor, src.Name, src.Version)
+				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s build %s)\n", src.Vendor, src.Name, src.Version, src.Build)
 			} else {
 				ver := cfg.DefaultVersion
 				if len(args) > 0 {
 					ver = args[0]
 				}
-				src, err = config.FindSourceIn(effectiveSources, ver, vendor, cfg.DefaultVersion)
+				src, err = config.FindSourceIn(effectiveSources, ver, vendor, build, cfg.DefaultVersion)
 				if err != nil {
 					return err
 				}
@@ -129,6 +132,7 @@ Contoh:
 	}
 
 	cmd.Flags().StringVar(&vendor, "vendor", "", "Filter vendor (case-insensitive), misal: jetbrains, eclipse")
+	cmd.Flags().StringVar(&build, "build", "", "Filter build number (case-insensitive), misal: b508.7, b508.27")
 	cmd.Flags().BoolVar(&lts, "lts", false, "Install JDK LTS terbaru dari sources")
 	return cmd
 }

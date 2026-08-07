@@ -22,7 +22,7 @@ func TestFetchJetBrainsSources(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sources, err := fetcher.FetchJetBrainsSources(server.URL)
+	sources, err := fetcher.FetchJetBrainsSources(server.URL, []string{"8", "11", "17", "21"})
 	if err != nil {
 		t.Fatalf("FetchJetBrainsSources error: %v", err)
 	}
