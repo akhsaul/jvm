@@ -1,0 +1,91 @@
+name: JavaWrapper CI & Verification
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build, Test & Verify jwrapper
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Unit Tests
+        run: |
+          go test -v ./...
+
+      - name: Build jwrapper-dev (Dev Mode)
+        run: |
+          go build -ldflags "-X javawrapper/internal/config.Mode=dev" -o jwrapper-dev ./cmd/jwrapper
+          chmod +x jwrapper-dev
+
+      - name: Initialize jwrapper Config
+        run: |
+          ./jwrapper-dev init
+
+      - name: Run jwrapper sources (Default / All)
+        run: |
+          echo "=== Running: ./jwrapper-dev sources ==="
+          ./jwrapper-dev sources
+
+      - name: Run jwrapper sources with --vendor flag
+        run: |
+          echo "=== Running: ./jwrapper-dev sources --vendor jetbrains ==="
+          ./jwrapper-dev sources --vendor jetbrains
+          echo ""
+          echo "=== Running: ./jwrapper-dev sources --vendor zulu ==="
+          ./jwrapper-dev sources --vendor zulu
+
+      - name: Run jwrapper sources with --lts flag
+        run: |
+          echo "=== Running: ./jwrapper-dev sources --lts ==="
+          ./jwrapper-dev sources --lts
+
+      - name: Run jwrapper sources with --os & --arch flags
+        run: |
+          echo "=== Running: ./jwrapper-dev sources --os linux --arch x64 ==="
+          ./jwrapper-dev sources --os linux --arch x64
+
+      - name: Run jwrapper sources with combined flags (--vendor zulu --lts)
+        run: |
+          echo "=== Running: ./jwrapper-dev sources --vendor zulu --lts ==="
+          ./jwrapper-dev sources --vendor zulu --lts
+
+      - name: Run jwrapper install 25
+        run: |
+          echo "=== Installing JDK 25 ==="
+          ./jwrapper-dev install 25
+
+      - name: Verify Installation & Directory Listing
+        run: |
+          echo "=== Executing: ./jwrapper-dev list ==="
+          ./jwrapper-dev list
+          echo ""
+          echo "=== Root Directory Content ==="
+          ls -la
+          echo ""
+          echo "=== Listing versions/ Directory ==="
+          if [ -d "versions" ]; then
+            ls -la versions/
+            echo ""
+            echo "=== Detailed Listing inside versions/ ==="
+            find versions -maxdepth 3 -ls || true
+          fi
+
+      - name: Upload jwrapper-dev Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jwrapper-dev-binary
+          path: jwrapper-dev
