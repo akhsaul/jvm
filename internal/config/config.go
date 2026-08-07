@@ -1,104 +1,174 @@
 package config
 
 import (
-    "os"
-    "path/filepath"
-    "gopkg.in/yaml.v3"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 )
 
-type JDKInfo struct {
-    Version string `yaml:"version"`
-    Path    string `yaml:"path"`
-    URL     string `yaml:"url,omitempty"`
+// JDKSource mendefinisikan sumber download JDK yang tersedia.
+type JDKSource struct {
+	Name    string `json:"name"`              // nama distribusi, misal "JetBrains Runtime"
+	Version string `json:"version"`           // versi JDK, misal "17", "21"
+	URL     string `json:"url"`               // URL download tar.gz
+	OS      string `json:"os,omitempty"`      // target OS: "linux", "windows", "darwin"
+	Arch    string `json:"arch,omitempty"`    // target arch: "x64", "aarch64"
+	Note    string `json:"note,omitempty"`    // catatan opsional
 }
 
+// JDKInstalled merepresentasikan JDK yang sudah terinstall di sistem.
+type JDKInstalled struct {
+	Version  string `json:"version"`           // versi JDK
+	Path     string `json:"path"`              // path folder hasil ekstrak
+	URL      string `json:"url,omitempty"`     // URL sumber download
+	Name     string `json:"name,omitempty"`    // nama distribusi
+}
+
+// Config adalah struktur utama file jwrapper.json.
 type Config struct {
-    InstallDir        string   `yaml:"install_dir"`
-    DefaultJDKURL     string   `yaml:"default_jdk_url"`
-    ActiveVersion     string   `yaml:"active_version"`
-    InstalledVersions []JDKInfo `yaml:"installed_versions"`
+	// InstallDir adalah folder tempat JDK diinstall.
+	InstallDir string `json:"install_dir"`
+
+	// DefaultVersion adalah versi JDK yang digunakan secara default saat install.
+	DefaultVersion string `json:"default_version"`
+
+	// ActiveVersion adalah versi JDK yang sedang aktif digunakan.
+	ActiveVersion string `json:"active_version"`
+
+	// Sources adalah daftar sumber JDK yang tersedia untuk di-download.
+	// User bisa menambah entry baru di sini.
+	Sources []JDKSource `json:"sources"`
+
+	// Installed adalah daftar JDK yang sudah terinstall.
+	Installed []JDKInstalled `json:"installed"`
 }
 
-// defaultConfigPath returns the path to the config file located beside the executable.
+// defaultSources mengembalikan daftar sumber JDK bawaan.
+func defaultSources() []JDKSource {
+	return []JDKSource{
+		{
+			Name:    "JetBrains Runtime",
+			Version: "21",
+			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
+			OS:      "linux",
+			Arch:    "x64",
+			Note:    "JBR with JCEF for Linux x64",
+		},
+		{
+			Name:    "JetBrains Runtime",
+			Version: "17",
+			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
+			OS:      "linux",
+			Arch:    "x64",
+			Note:    "JBR with JCEF for Linux x64",
+		},
+	}
+}
+
+// defaultConfigPath mengembalikan path ke jwrapper.json di samping executable.
 func defaultConfigPath() string {
-    exe, err := os.Executable()
-    if err != nil {
-        // fallback to current working directory
-        cwd, _ := os.Getwd()
-        return filepath.Join(cwd, "jwrapper.yaml")
-    }
-    dir := filepath.Dir(exe)
-    return filepath.Join(dir, "jwrapper.yaml")
-}
-
-func Load() (*Config, error) {
-    path := defaultConfigPath()
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return nil, err
-    }
-    var cfg Config
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, err
-    }
-    return &cfg, nil
-}
-
-func LoadOrCreate() (*Config, error) {
-    cfg, err := Load()
-    if err == nil {
-        return cfg, nil
-    }
-    // create default config
-    exe, _ := os.Executable()
-    dir := filepath.Dir(exe)
-    cfg = &Config{
-        InstallDir:    filepath.Join(dir, "jdk"),
-        DefaultJDKURL: "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbrsdk-17.0.9%2B0/jbrsdk-17.0.9%2B0-linux-x64.tar.gz",
-        ActiveVersion: "",
-        InstalledVersions: []JDKInfo{},
-    }
-    if err := cfg.Save(); err != nil {
-        return nil, err
-    }
-    return cfg, nil
-}
-
-func (c *Config) Save() error {
-	path := defaultConfigPath()
-	return SaveTo(c, path)
-}
-
-// SaveTo menyimpan config ke path yang diberikan. Berguna untuk testing.
-func SaveTo(c *Config, path string) error {
-	data, err := yaml.Marshal(c)
+	exe, err := os.Executable()
 	if err != nil {
-		return err
+		cwd, _ := os.Getwd()
+		return filepath.Join(cwd, "jwrapper.json")
+	}
+	return filepath.Join(filepath.Dir(exe), "jwrapper.json")
+}
+
+// Load memuat konfigurasi dari jwrapper.json di samping binary.
+func Load() (*Config, error) {
+	return LoadFrom(defaultConfigPath())
+}
+
+// LoadOrCreate memuat konfigurasi yang ada, atau membuat yang baru dengan nilai default.
+func LoadOrCreate() (*Config, error) {
+	cfg, err := Load()
+	if err == nil {
+		return cfg, nil
+	}
+	exe, _ := os.Executable()
+	dir := filepath.Dir(exe)
+	cfg = &Config{
+		InstallDir:     filepath.Join(dir, "jdk"),
+		DefaultVersion: "21",
+		ActiveVersion:  "",
+		Sources:        defaultSources(),
+		Installed:      []JDKInstalled{},
+	}
+	if err := cfg.Save(); err != nil {
+		return nil, fmt.Errorf("gagal membuat config default: %w", err)
+	}
+	return cfg, nil
+}
+
+// Save menyimpan konfigurasi ke jwrapper.json di samping binary.
+func (c *Config) Save() error {
+	return SaveTo(c, defaultConfigPath())
+}
+
+// SaveTo menyimpan config ke path yang diberikan (berguna untuk testing).
+func SaveTo(c *Config, path string) error {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("gagal marshal config: %w", err)
 	}
 	return os.WriteFile(path, data, 0644)
 }
 
-// LoadFrom memuat config dari path yang diberikan. Berguna untuk testing.
+// LoadFrom memuat config dari path yang diberikan (berguna untuk testing).
 func LoadFrom(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("gagal parse jwrapper.json: %w", err)
 	}
 	return &cfg, nil
 }
 
-func (c *Config) GetURLForVersion(v string) string {
-    if v == "latest" || v == "" {
-        return c.DefaultJDKURL
-    }
-    for _, info := range c.InstalledVersions {
-        if info.Version == v && info.URL != "" {
-            return info.URL
-        }
-    }
-    return c.DefaultJDKURL
+// GetURLForVersion mengembalikan URL download untuk versi tertentu.
+// Prioritas: (1) versi yang sudah terinstall, (2) sources list, (3) default version dari sources.
+func (c *Config) GetURLForVersion(version string) string {
+	if version == "" || version == "latest" {
+		version = c.DefaultVersion
+	}
+
+	// Cari di daftar sources berdasarkan versi
+	for _, s := range c.Sources {
+		if s.Version == version {
+			return s.URL
+		}
+	}
+
+	// Fallback: kembalikan URL source pertama
+	if len(c.Sources) > 0 {
+		return c.Sources[0].URL
+	}
+	return ""
+}
+
+// GetSourceByVersion mengembalikan JDKSource untuk versi tertentu, atau nil jika tidak ada.
+func (c *Config) GetSourceByVersion(version string) *JDKSource {
+	if version == "" || version == "latest" {
+		version = c.DefaultVersion
+	}
+	for i := range c.Sources {
+		if c.Sources[i].Version == version {
+			return &c.Sources[i]
+		}
+	}
+	return nil
+}
+
+// IsInstalled mengecek apakah versi tertentu sudah terinstall.
+func (c *Config) IsInstalled(version string) bool {
+	for _, v := range c.Installed {
+		if v.Version == version {
+			return true
+		}
+	}
+	return false
 }

@@ -12,7 +12,7 @@ import (
 // Switch mengubah versi JDK aktif dan menulis java_home.sh di samping binary.
 func Switch(cfg *config.Config, ver string) error {
 	var targetPath string
-	for _, v := range cfg.InstalledVersions {
+	for _, v := range cfg.Installed {
 		if v.Version == ver {
 			targetPath = v.Path
 			break
@@ -35,22 +35,29 @@ func Switch(cfg *config.Config, ver string) error {
 		return fmt.Errorf("gagal menulis java_home.sh: %w", err)
 	}
 
-	fmt.Printf("Versi aktif sekarang: %s\nJAVA_HOME=%s\n", ver, cleanPath)
-	fmt.Printf("Jalankan: source %s\n", wrapperPath)
+	fmt.Printf("✓ Versi aktif sekarang: %s\n", ver)
+	fmt.Printf("  JAVA_HOME=%s\n", cleanPath)
+	fmt.Printf("  Jalankan: source %s\n", wrapperPath)
 	return nil
 }
 
 // List menampilkan semua versi JDK terinstall beserta statusnya.
 func List(cfg *config.Config) {
-	if len(cfg.InstalledVersions) == 0 {
+	if len(cfg.Installed) == 0 {
 		fmt.Println("Belum ada JDK yang terinstall.")
 		return
 	}
-	for _, v := range cfg.InstalledVersions {
-		active := " "
+	fmt.Printf("%-6s %-20s %-10s %s\n", "Status", "Distribusi", "Versi", "Path")
+	fmt.Println(strings.Repeat("-", 70))
+	for _, v := range cfg.Installed {
+		active := "  "
 		if v.Version == cfg.ActiveVersion {
-			active = "*"
+			active = "* "
 		}
-		fmt.Printf("[%s] %s  ->  %s\n", active, v.Version, v.Path)
+		name := v.Name
+		if name == "" {
+			name = "Unknown"
+		}
+		fmt.Printf("%s     %-20s %-10s %s\n", active, name, v.Version, v.Path)
 	}
 }
