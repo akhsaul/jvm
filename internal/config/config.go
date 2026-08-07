@@ -191,18 +191,31 @@ func (c *Config) GetSourceByVersion(version string) *JDKSource {
 	return nil
 }
 
-// FindSource mencari JDKSource berdasarkan versi dan (opsional) vendor.
-// Pencocokan vendor bersifat case-insensitive.
-// Jika vendor kosong, hanya cocokkan berdasarkan versi.
+// HasVendorSources mengecek apakah ada setidaknya satu source untuk vendor tertentu di jwrapper.json (case-insensitive).
+func (c *Config) HasVendorSources(vendor string) bool {
+	for _, s := range c.Sources {
+		if strings.EqualFold(s.Vendor, vendor) {
+			return true
+		}
+	}
+	return false
+}
+
+// FindSource mencari JDKSource berdasarkan versi dan (opsional) vendor dalam c.Sources.
 func (c *Config) FindSource(version, vendor string) (*JDKSource, error) {
+	return FindSourceIn(c.Sources, version, vendor, c.DefaultVersion)
+}
+
+// FindSourceIn mencari JDKSource dari slice sources yang diberikan.
+func FindSourceIn(sources []JDKSource, version, vendor, defaultVersion string) (*JDKSource, error) {
 	if version == "" || version == "latest" {
-		version = c.DefaultVersion
+		version = defaultVersion
 	}
 	vendorLower := strings.ToLower(vendor)
 
 	var candidates []*JDKSource
-	for i := range c.Sources {
-		s := &c.Sources[i]
+	for i := range sources {
+		s := &sources[i]
 		if s.Version != version {
 			continue
 		}
@@ -218,17 +231,19 @@ func (c *Config) FindSource(version, vendor string) (*JDKSource, error) {
 		}
 		return nil, fmt.Errorf("tidak ditemukan JDK versi %s di sources", version)
 	}
-	// Kembalikan kandidat pertama yang cocok
 	return candidates[0], nil
 }
 
-// FindLatestLTS mencari source LTS dengan versi tertinggi.
-// Jika vendor diisi, filter berdasarkan vendor (case-insensitive).
-// Versi dibandingkan sebagai string numerik mayor (misal "21" > "17" > "11").
+// FindLatestLTS mencari source LTS dengan versi tertinggi dalam c.Sources.
 func (c *Config) FindLatestLTS(vendor string) (*JDKSource, error) {
+	return FindLatestLTSIn(c.Sources, vendor)
+}
+
+// FindLatestLTSIn mencari source LTS dengan versi tertinggi dari slice sources yang diberikan.
+func FindLatestLTSIn(sources []JDKSource, vendor string) (*JDKSource, error) {
 	var best *JDKSource
-	for i := range c.Sources {
-		s := &c.Sources[i]
+	for i := range sources {
+		s := &sources[i]
 		if !s.LTS {
 			continue
 		}
@@ -247,6 +262,7 @@ func (c *Config) FindLatestLTS(vendor string) (*JDKSource, error) {
 	}
 	return best, nil
 }
+
 
 // compareVersion membandingkan dua versi numerik sederhana (misal "17", "21").
 // Mengembalikan positif jika a > b, negatif jika a < b, 0 jika sama.

@@ -3,10 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"javawrapper/internal/config"
 	"javawrapper/internal/env"
+	"javawrapper/internal/fetcher"
 	"javawrapper/internal/install"
 	"javawrapper/internal/version"
 )
@@ -33,6 +35,28 @@ func Execute() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+// resolveEffectiveSources mengembalikan daftar sources yang akan digunakan.
+// Jika vendor JetBrains SUDAH ADA di config (jwrapper.json), gunakan config saja (user override!).
+// Jika vendor JetBrains BELUM ADA di config, fetch otomatis dari GitHub via Git Smart HTTP.
+func resolveEffectiveSources(cfg *config.Config, targetVendor string) []config.JDKSource {
+	// Cek apakah user sudah set vendor JetBrains di jwrapper.json
+	if cfg.HasVendorSources("JetBrains") {
+		// User override di jwrapper.json: abaikan fetch GitHub!
+		return cfg.Sources
+	}
+
+	// Jika vendor JetBrains tidak ada di config (atau targetVendor kosong / jetbrains), fetch dari GitHub
+	effective := append([]config.JDKSource{}, cfg.Sources...)
+	if targetVendor == "" || strings.EqualFold(targetVendor, "jetbrains") {
+		ghSources, err := fetcher.FetchJetBrainsSources("")
+		if err == nil && len(ghSources) > 0 {
+			effective = append(effective, ghSources...)
+		}
+	}
+
+	return effective
 }
 
 // ----- command definitions -----
@@ -78,23 +102,23 @@ Contoh:
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
 
+			// Ambil sources efektif (jika vendor JetBrains ada di json -> user override, jika tidak -> fetch GitHub)
+			effectiveSources := resolveEffectiveSources(cfg, vendor)
+
 			var src *config.JDKSource
 
 			if lts {
-				// --lts: cari LTS tertinggi, filter vendor jika diberikan
-				src, err = cfg.FindLatestLTS(vendor)
+				src, err = config.FindLatestLTSIn(effectiveSources, vendor)
 				if err != nil {
 					return err
 				}
 				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s)\n", src.Vendor, src.Name, src.Version)
 			} else {
-				// Tentukan versi dari argumen atau DefaultVersion
 				ver := cfg.DefaultVersion
 				if len(args) > 0 {
 					ver = args[0]
 				}
-				// Cari source; vendor dicocokkan case-insensitive
-				src, err = cfg.FindSource(ver, vendor)
+				src, err = config.FindSourceIn(effectiveSources, ver, vendor, cfg.DefaultVersion)
 				if err != nil {
 					return err
 				}
@@ -108,6 +132,7 @@ Contoh:
 	cmd.Flags().BoolVar(&lts, "lts", false, "Install JDK LTS terbaru dari sources")
 	return cmd
 }
+
 
 func cmdUse() *cobra.Command {
 	return &cobra.Command{
@@ -153,26 +178,37 @@ func cmdSet() *cobra.Command {
 func cmdSources() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sources",
-		Short: "Tampilkan daftar sumber JDK yang tersedia di config",
+		Short: "Tampilkan daftar sumber JDK yang tersedia di config/fetched",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
-			if len(cfg.Sources) == 0 {
-				fmt.Println("Tidak ada sources di jwrapper.json.")
+
+			sources := resolveEffectiveSources(cfg, "")
+			if cfg.HasVendorSources("JetBrains") {
+				fmt.Println("(JetBrains sources di-override dari jwrapper.json)")
+			}
+
+			if len(sources) == 0 {
+				fmt.Println("Tidak ada sources yang tersedia.")
 				return nil
 			}
-			fmt.Printf("%-6s %-15s %-22s %-8s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "OS", "URL")
-			fmt.Println("----------------------------------------------------------------------------------------------")
-			for _, s := range cfg.Sources {
+			fmt.Printf("%-6s %-15s %-22s %-8s %-6s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "LTS", "OS", "URL")
+			fmt.Println("-------------------------------------------------------------------------------------------------------")
+			for _, s := range sources {
 				def := "  "
 				if s.Version == cfg.DefaultVersion {
 					def = "* "
 				}
-				fmt.Printf("%s     %-15s %-22s %-8s %-8s %s\n", def, s.Vendor, s.Name, s.Version, s.OS, s.URL)
+				isLTS := "no"
+				if s.LTS {
+					isLTS = "yes"
+				}
+				fmt.Printf("%s     %-15s %-22s %-8s %-6s %-8s %s\n", def, s.Vendor, s.Name, s.Version, isLTS, s.OS, s.URL)
 			}
 			return nil
 		},
 	}
 }
+
