@@ -71,15 +71,19 @@ func ParseJetBrainsGitRefs(r io.Reader, ltsVersions []string) ([]config.JDKSourc
 			fullVersion = fmt.Sprintf("%s.%s", major, verMinor)
 		}
 
-		// Deteksi OS dan Arch saat runtime
+		// Deteksi OS dan Arch saat runtime (JetBrains memakai 'osx' untuk darwin/macOS)
 		currOS := config.CurrentOS()
+		jbOS := currOS
+		if jbOS == "darwin" {
+			jbOS = "osx"
+		}
 		currArch := config.CurrentArch()
 
-		// Format URL download standar JetBrains Runtime
-		// Contoh: https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz
+		// Format URL download resmi JetBrains Runtime via CDN redirector
+		// Contoh: https://cache-redirector.jetbrains.com/intellij-jbr/jbr_jcef-21.0.11-linux-x64-b1163.116.tar.gz
 		downloadURL := fmt.Sprintf(
-			"https://github.com/JetBrains/JetBrainsRuntime/releases/download/%s/jbr_jcef-%s-%s-%s-b%s.tar.gz",
-			fullTag, fullVersion, currOS, currArch, buildNum,
+			"https://cache-redirector.jetbrains.com/intellij-jbr/jbr_jcef-%s-%s-%s-b%s.tar.gz",
+			fullVersion, jbOS, currArch, buildNum,
 		)
 
 		isLTS := false

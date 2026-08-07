@@ -48,7 +48,7 @@ func TestFetchJetBrainsSources(t *testing.T) {
 	if s21.Version != "21.0.3" || s21.Build != "b465.3" || !s21.LTS {
 		t.Errorf("v21 unexpected: %+v", s21)
 	}
-	expectedURL21 := "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz"
+	expectedURL21 := "https://cache-redirector.jetbrains.com/intellij-jbr/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz"
 	if s21.URL != expectedURL21 {
 		t.Errorf("v21 URL = %s, want %s", s21.URL, expectedURL21)
 	}
