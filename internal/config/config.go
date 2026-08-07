@@ -63,30 +63,10 @@ type Config struct {
 	Installed []JDKInstalled `json:"installed"`
 }
 
-// defaultSources mengembalikan daftar sumber JDK bawaan.
+// defaultSources mengembalikan daftar sumber JDK bawaan (kosong secara default
+// agar jwrapper otomatis fetch seluruh rilis dari GitHub via Git Smart HTTP).
 func defaultSources() []JDKSource {
-	return []JDKSource{
-		{
-			Vendor:  "JetBrains",
-			Name:    "JetBrains Runtime",
-			Version: "21.0.3",
-			Build:   "b465.3",
-			LTS:     true,
-			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
-			OS:      "linux",
-			Arch:    "x64",
-		},
-		{
-			Vendor:  "JetBrains",
-			Name:    "JetBrains Runtime",
-			Version: "17.0.10",
-			Build:   "b1087.23",
-			LTS:     true,
-			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
-			OS:      "linux",
-			Arch:    "x64",
-		},
-	}
+	return []JDKSource{}
 }
 
 // defaultConfigPath mengembalikan path ke jwrapper.json di samping executable.
