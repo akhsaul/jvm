@@ -214,6 +214,7 @@ func cmdSources() *cobra.Command {
 	var vendorFlag string
 	var osFlag string
 	var archFlag string
+	var ltsFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "sources",
@@ -230,6 +231,17 @@ func cmdSources() *cobra.Command {
 			}
 			if cfg.HasVendorSources("Zulu") {
 				fmt.Println("(Zulu sources di-override dari jwrapper.json)")
+			}
+
+			// Filter rilis LTS jika flag --lts diaktifkan
+			if ltsFlag {
+				ltsSources := make([]config.JDKSource, 0, len(sources))
+				for _, s := range sources {
+					if s.LTS {
+						ltsSources = append(ltsSources, s)
+					}
+				}
+				sources = ltsSources
 			}
 
 			if len(sources) == 0 {
@@ -277,6 +289,7 @@ func cmdSources() *cobra.Command {
 	cmd.Flags().StringVar(&vendorFlag, "vendor", "", "Filter berdasarkan Vendor (misal: jetbrains, zulu)")
 	cmd.Flags().StringVar(&osFlag, "os", "", "Filter berdasarkan OS (misal: linux, darwin, windows)")
 	cmd.Flags().StringVar(&archFlag, "arch", "", "Filter berdasarkan Arsitektur (misal: x64, aarch64, x86)")
+	cmd.Flags().BoolVar(&ltsFlag, "lts", false, "Filter hanya menampilkan rilis LTS")
 	return cmd
 }
 
