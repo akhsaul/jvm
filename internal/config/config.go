@@ -13,6 +13,7 @@ type JDKSource struct {
 	Vendor  string `json:"vendor"`            // nama vendor tanpa spasi, misal "JetBrains", "Eclipse"
 	Name    string `json:"name"`              // nama distribusi, misal "JetBrains Runtime"
 	Version string `json:"version"`           // versi JDK, misal "17", "21"
+	LTS     bool   `json:"lts"`              // true jika versi ini adalah Long-Term Support
 	URL     string `json:"url"`               // URL download tar.gz
 	OS      string `json:"os,omitempty"`      // target OS: "linux", "windows", "darwin"
 	Arch    string `json:"arch,omitempty"`    // target arch: "x64", "aarch64"
@@ -63,6 +64,7 @@ func defaultSources() []JDKSource {
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
 			Version: "21",
+			LTS:     true,
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
 			OS:      "linux",
 			Arch:    "x64",
@@ -71,6 +73,7 @@ func defaultSources() []JDKSource {
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
 			Version: "17",
+			LTS:     true,
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
 			OS:      "linux",
 			Arch:    "x64",
@@ -160,20 +163,15 @@ func LoadFrom(path string) (*Config, error) {
 }
 
 // GetURLForVersion mengembalikan URL download untuk versi tertentu.
-// Prioritas: (1) versi yang sudah terinstall, (2) sources list, (3) default version dari sources.
 func (c *Config) GetURLForVersion(version string) string {
 	if version == "" || version == "latest" {
 		version = c.DefaultVersion
 	}
-
-	// Cari di daftar sources berdasarkan versi
 	for _, s := range c.Sources {
 		if s.Version == version {
 			return s.URL
 		}
 	}
-
-	// Fallback: kembalikan URL source pertama
 	if len(c.Sources) > 0 {
 		return c.Sources[0].URL
 	}
@@ -191,6 +189,80 @@ func (c *Config) GetSourceByVersion(version string) *JDKSource {
 		}
 	}
 	return nil
+}
+
+// FindSource mencari JDKSource berdasarkan versi dan (opsional) vendor.
+// Pencocokan vendor bersifat case-insensitive.
+// Jika vendor kosong, hanya cocokkan berdasarkan versi.
+func (c *Config) FindSource(version, vendor string) (*JDKSource, error) {
+	if version == "" || version == "latest" {
+		version = c.DefaultVersion
+	}
+	vendorLower := strings.ToLower(vendor)
+
+	var candidates []*JDKSource
+	for i := range c.Sources {
+		s := &c.Sources[i]
+		if s.Version != version {
+			continue
+		}
+		if vendor != "" && !strings.EqualFold(s.Vendor, vendorLower) {
+			continue
+		}
+		candidates = append(candidates, s)
+	}
+
+	if len(candidates) == 0 {
+		if vendor != "" {
+			return nil, fmt.Errorf("tidak ditemukan JDK versi %s dengan vendor %q di sources", version, vendor)
+		}
+		return nil, fmt.Errorf("tidak ditemukan JDK versi %s di sources", version)
+	}
+	// Kembalikan kandidat pertama yang cocok
+	return candidates[0], nil
+}
+
+// FindLatestLTS mencari source LTS dengan versi tertinggi.
+// Jika vendor diisi, filter berdasarkan vendor (case-insensitive).
+// Versi dibandingkan sebagai string numerik mayor (misal "21" > "17" > "11").
+func (c *Config) FindLatestLTS(vendor string) (*JDKSource, error) {
+	var best *JDKSource
+	for i := range c.Sources {
+		s := &c.Sources[i]
+		if !s.LTS {
+			continue
+		}
+		if vendor != "" && !strings.EqualFold(s.Vendor, vendor) {
+			continue
+		}
+		if best == nil || compareVersion(s.Version, best.Version) > 0 {
+			best = s
+		}
+	}
+	if best == nil {
+		if vendor != "" {
+			return nil, fmt.Errorf("tidak ada JDK LTS untuk vendor %q di sources", vendor)
+		}
+		return nil, fmt.Errorf("tidak ada JDK LTS di sources")
+	}
+	return best, nil
+}
+
+// compareVersion membandingkan dua versi numerik sederhana (misal "17", "21").
+// Mengembalikan positif jika a > b, negatif jika a < b, 0 jika sama.
+func compareVersion(a, b string) int {
+	parseNum := func(s string) int {
+		n := 0
+		for _, c := range s {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			} else {
+				break
+			}
+		}
+		return n
+	}
+	return parseNum(a) - parseNum(b)
 }
 
 // IsInstalled mengecek apakah versi tertentu sudah terinstall.

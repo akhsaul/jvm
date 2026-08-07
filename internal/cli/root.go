@@ -58,26 +58,55 @@ func cmdInit() *cobra.Command {
 }
 
 func cmdInstall() *cobra.Command {
-	return &cobra.Command{
+	var vendor string
+	var lts bool
+
+	cmd := &cobra.Command{
 		Use:   "install [versi]",
-		Short: "Download dan install JDK (default: versi default dari config)",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Download dan install JDK",
+		Long: `Download dan install JDK dari daftar sources di jwrapper.json.
+
+Contoh:
+  jwrapper install 21                        # install versi 21 (vendor apapun)
+  jwrapper install 25 --vendor jetbrains     # install versi 25 dari JetBrains (case-insensitive)
+  jwrapper install --lts                     # install LTS terbaru
+  jwrapper install --lts --vendor jetbrains  # install LTS terbaru dari JetBrains`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
-			ver := cfg.DefaultVersion
-			if len(args) > 0 {
-				ver = args[0]
+
+			var src *config.JDKSource
+
+			if lts {
+				// --lts: cari LTS tertinggi, filter vendor jika diberikan
+				src, err = cfg.FindLatestLTS(vendor)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s)\n", src.Vendor, src.Name, src.Version)
+			} else {
+				// Tentukan versi dari argumen atau DefaultVersion
+				ver := cfg.DefaultVersion
+				if len(args) > 0 {
+					ver = args[0]
+				}
+				// Cari source; vendor dicocokkan case-insensitive
+				src, err = cfg.FindSource(ver, vendor)
+				if err != nil {
+					return err
+				}
 			}
-			url := cfg.GetURLForVersion(ver)
-			if url == "" {
-				return fmt.Errorf("tidak ada URL untuk versi %s di jwrapper.json", ver)
-			}
-			return install.InstallJDK(ver, url, cfg.InstallDir)
+
+			return install.InstallJDK(src.Version, src.URL, cfg.InstallDir)
 		},
 	}
+
+	cmd.Flags().StringVar(&vendor, "vendor", "", "Filter vendor (case-insensitive), misal: jetbrains, eclipse")
+	cmd.Flags().BoolVar(&lts, "lts", false, "Install JDK LTS terbaru dari sources")
+	return cmd
 }
 
 func cmdUse() *cobra.Command {
