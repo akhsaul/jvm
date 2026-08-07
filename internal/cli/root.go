@@ -38,22 +38,40 @@ func Execute() {
 }
 
 // resolveEffectiveSources mengembalikan daftar sources yang akan digunakan.
-// Jika vendor JetBrains SUDAH ADA di config (jwrapper.json), gunakan config saja (user override!).
-// Jika vendor JetBrains BELUM ADA di config, fetch otomatis dari GitHub via Git Smart HTTP.
-func resolveEffectiveSources(cfg *config.Config, targetVendor string) []config.JDKSource {
-	// Cek apakah user sudah set vendor JetBrains di jwrapper.json
-	if cfg.HasVendorSources("JetBrains") {
-		// User override di jwrapper.json: abaikan fetch GitHub!
-		return cfg.Sources
+// Jika vendor (JetBrains / Zulu) SUDAH ADA di config (jwrapper.json), gunakan config saja (user override!).
+// Jika vendor BELUM ADA di config, fetch otomatis dari remote (GitHub / Azul API).
+func resolveEffectiveSources(cfg *config.Config, targetVendor, targetOS, targetArch string) []config.JDKSource {
+	effective := append([]config.JDKSource{}, cfg.Sources...)
+
+	// Fetch JetBrains dari GitHub jika belum di-override
+	if !cfg.HasVendorSources("JetBrains") {
+		if targetVendor == "" || strings.EqualFold(targetVendor, "jetbrains") {
+			ghSources, err := fetcher.FetchJetBrainsSources("", cfg.LTSVersions)
+			if err == nil && len(ghSources) > 0 {
+				effective = append(effective, ghSources...)
+			}
+		}
 	}
 
-	// Jika vendor JetBrains tidak ada di config (atau targetVendor kosong / jetbrains), fetch dari GitHub
-	effective := append([]config.JDKSource{}, cfg.Sources...)
-	if targetVendor == "" || strings.EqualFold(targetVendor, "jetbrains") {
-		ghSources, err := fetcher.FetchJetBrainsSources("", cfg.LTSVersions)
-		if err == nil && len(ghSources) > 0 {
-			effective = append(effective, ghSources...)
+	// Fetch Zulu dari Azul API jika belum di-override
+	if !cfg.HasVendorSources("Zulu") {
+		if targetVendor == "" || strings.EqualFold(targetVendor, "zulu") {
+			zuluSources, err := fetcher.FetchZuluSources("", cfg.LTSVersions)
+			if err == nil && len(zuluSources) > 0 {
+				effective = append(effective, zuluSources...)
+			}
 		}
+	}
+
+	// Filter berdasarkan OS dan Arch (jika ditentukan)
+	if targetOS != "" || targetArch != "" {
+		filtered := make([]config.JDKSource, 0, len(effective))
+		for _, s := range effective {
+			if s.MatchOSArch(targetOS, targetArch) {
+				filtered = append(filtered, s)
+			}
+		}
+		return filtered
 	}
 
 	return effective
@@ -76,6 +94,7 @@ func cmdInit() *cobra.Command {
 			fmt.Printf("✓ Config disimpan di: %s\n", cfg.InstallDir)
 			fmt.Printf("  Default versi  : %s\n", cfg.DefaultVersion)
 			fmt.Printf("  Daftar LTS     : %v\n", cfg.LTSVersions)
+			fmt.Printf("  OS sistem      : %s (%s)\n", config.CurrentOS(), config.CurrentArch())
 			fmt.Printf("  Jumlah sources : %d\n", len(cfg.Sources))
 			return cfg.Save()
 		},
@@ -85,19 +104,21 @@ func cmdInit() *cobra.Command {
 func cmdInstall() *cobra.Command {
 	var vendor string
 	var build string
+	var osFlag string
+	var archFlag string
 	var lts bool
 
 	cmd := &cobra.Command{
 		Use:   "install [versi]",
 		Short: "Download dan install JDK",
-		Long: `Download dan install JDK dari daftar sources di jwrapper.json atau GitHub.
+		Long: `Download dan install JDK dari daftar sources di jwrapper.json atau provider resmi (JetBrains, Zulu).
 
 Contoh:
-  jwrapper install 25                        # match versi 25 terbaru (25.0.4 b508.27)
-  jwrapper install 25.0.4                    # match versi 25.0.4 terbaru
-  jwrapper install 25 --build b508.7         # match versi 25 dan build b508.7
-  jwrapper install 25 --vendor jetbrains     # match versi 25 dari vendor JetBrains
-  jwrapper install --lts                     # install LTS terbaru`,
+  jwrapper install 25                        # match versi 25 terbaru
+  jwrapper install 21 --vendor zulu          # install versi 21 dari provider Zulu
+  jwrapper install 25 --vendor jetbrains     # install versi 25 dari JetBrains
+  jwrapper install --lts                     # install LTS terbaru
+  jwrapper install 25 --os linux --arch x64  # install spesifik OS & Arch`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -105,8 +126,16 @@ Contoh:
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
 
-			// Ambil sources efektif
-			effectiveSources := resolveEffectiveSources(cfg, vendor)
+			// Secara default gunakan OS dan Arch dari runtime jika flag tidak diisi
+			if osFlag == "" {
+				osFlag = config.CurrentOS()
+			}
+			if archFlag == "" {
+				archFlag = config.CurrentArch()
+			}
+
+			// Ambil sources efektif dengan filter OS & Arch
+			effectiveSources := resolveEffectiveSources(cfg, vendor, osFlag, archFlag)
 
 			var src *config.JDKSource
 
@@ -115,7 +144,8 @@ Contoh:
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s build %s)\n", src.Vendor, src.Name, src.Version, src.Build)
+				fmt.Printf("Ditemukan LTS terbaru: %s %s (v%s build %s) untuk %s/%s\n",
+					src.Vendor, src.Name, src.Version, src.Build, src.OS, src.Arch)
 			} else {
 				ver := cfg.DefaultVersion
 				if len(args) > 0 {
@@ -131,12 +161,13 @@ Contoh:
 		},
 	}
 
-	cmd.Flags().StringVar(&vendor, "vendor", "", "Filter vendor (case-insensitive), misal: jetbrains, eclipse")
-	cmd.Flags().StringVar(&build, "build", "", "Filter build number (case-insensitive), misal: b508.7, b508.27")
+	cmd.Flags().StringVar(&vendor, "vendor", "", "Filter vendor (case-insensitive), misal: jetbrains, zulu")
+	cmd.Flags().StringVar(&build, "build", "", "Filter build number (case-insensitive), misal: b508.7, zulu21.34.19")
+	cmd.Flags().StringVar(&osFlag, "os", "", "Filter OS (default: OS sistem saat runtime)")
+	cmd.Flags().StringVar(&archFlag, "arch", "", "Filter Arsitektur (default: Arch sistem saat runtime)")
 	cmd.Flags().BoolVar(&lts, "lts", false, "Install JDK LTS terbaru dari sources")
 	return cmd
 }
-
 
 func cmdUse() *cobra.Command {
 	return &cobra.Command{
@@ -180,7 +211,11 @@ func cmdSet() *cobra.Command {
 }
 
 func cmdSources() *cobra.Command {
-	return &cobra.Command{
+	var vendorFlag string
+	var osFlag string
+	var archFlag string
+
+	cmd := &cobra.Command{
 		Use:   "sources",
 		Short: "Tampilkan daftar sumber JDK yang tersedia di config/fetched",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -189,13 +224,16 @@ func cmdSources() *cobra.Command {
 				return fmt.Errorf("jalankan 'jwrapper init' terlebih dahulu: %w", err)
 			}
 
-			sources := resolveEffectiveSources(cfg, "")
+			sources := resolveEffectiveSources(cfg, vendorFlag, osFlag, archFlag)
 			if cfg.HasVendorSources("JetBrains") {
 				fmt.Println("(JetBrains sources di-override dari jwrapper.json)")
 			}
+			if cfg.HasVendorSources("Zulu") {
+				fmt.Println("(Zulu sources di-override dari jwrapper.json)")
+			}
 
 			if len(sources) == 0 {
-				fmt.Println("Tidak ada sources yang tersedia.")
+				fmt.Println("Tidak ada sources yang cocok.")
 				return nil
 			}
 
@@ -205,11 +243,11 @@ func cmdSources() *cobra.Command {
 			isDevMode := !strings.EqualFold(config.Mode, "prod")
 
 			if isDevMode {
-				fmt.Printf("%-6s %-15s %-22s %-10s %-12s %-6s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS", "URL")
-				fmt.Println("-------------------------------------------------------------------------------------------------------------------")
+				fmt.Printf("%-6s %-12s %-18s %-10s %-16s %-5s %-7s %-8s %s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS", "Arch", "URL")
+				fmt.Println("--------------------------------------------------------------------------------------------------------------------------------")
 			} else {
-				fmt.Printf("%-6s %-15s %-22s %-10s %-12s %-6s %-8s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS")
-				fmt.Println("-----------------------------------------------------------------------------------------")
+				fmt.Printf("%-6s %-12s %-18s %-10s %-16s %-5s %-7s %-8s\n", "Default", "Vendor", "Nama", "Versi", "Build", "LTS", "OS", "Arch")
+				fmt.Println("----------------------------------------------------------------------------------------------------")
 			}
 
 			for _, s := range sources {
@@ -227,14 +265,19 @@ func cmdSources() *cobra.Command {
 				}
 
 				if isDevMode {
-					fmt.Printf("%s     %-15s %-22s %-10s %-12s %-6s %-8s %s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS, s.URL)
+					fmt.Printf("%s     %-12s %-18s %-10s %-16s %-5s %-7s %-8s %s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS, s.Arch, s.URL)
 				} else {
-					fmt.Printf("%s     %-15s %-22s %-10s %-12s %-6s %-8s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS)
+					fmt.Printf("%s     %-12s %-18s %-10s %-16s %-5s %-7s %-8s\n", def, s.Vendor, s.Name, s.Version, build, isLTS, s.OS, s.Arch)
 				}
 			}
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&vendorFlag, "vendor", "", "Filter berdasarkan Vendor (misal: jetbrains, zulu)")
+	cmd.Flags().StringVar(&osFlag, "os", "", "Filter berdasarkan OS (misal: linux, darwin, windows)")
+	cmd.Flags().StringVar(&archFlag, "arch", "", "Filter berdasarkan Arsitektur (misal: x64, aarch64, x86)")
+	return cmd
 }
 
 

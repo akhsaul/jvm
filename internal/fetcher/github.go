@@ -71,13 +71,15 @@ func ParseJetBrainsGitRefs(r io.Reader, ltsVersions []string) ([]config.JDKSourc
 			fullVersion = fmt.Sprintf("%s.%s", major, verMinor)
 		}
 
-		buildStr := fmt.Sprintf("b%s", buildNum)
+		// Deteksi OS dan Arch saat runtime
+		currOS := config.CurrentOS()
+		currArch := config.CurrentArch()
 
 		// Format URL download standar JetBrains Runtime
 		// Contoh: https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz
 		downloadURL := fmt.Sprintf(
-			"https://github.com/JetBrains/JetBrainsRuntime/releases/download/%s/jbr_jcef-%s-linux-x64-b%s.tar.gz",
-			fullTag, fullVersion, buildNum,
+			"https://github.com/JetBrains/JetBrainsRuntime/releases/download/%s/jbr_jcef-%s-%s-%s-b%s.tar.gz",
+			fullTag, fullVersion, currOS, currArch, buildNum,
 		)
 
 		isLTS := false
@@ -88,6 +90,8 @@ func ParseJetBrainsGitRefs(r io.Reader, ltsVersions []string) ([]config.JDKSourc
 			}
 		}
 
+		buildStr := fmt.Sprintf("b%s", buildNum)
+
 		sources = append(sources, config.JDKSource{
 			Vendor:  "JetBrains",
 			Name:    "JetBrains Runtime",
@@ -95,8 +99,8 @@ func ParseJetBrainsGitRefs(r io.Reader, ltsVersions []string) ([]config.JDKSourc
 			Build:   buildStr,
 			LTS:     isLTS,
 			URL:     downloadURL,
-			OS:      "linux",
-			Arch:    "x64",
+			OS:      currOS,
+			Arch:    currArch,
 		})
 	}
 

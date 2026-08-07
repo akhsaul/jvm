@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -34,6 +35,64 @@ func (s *JDKSource) Validate() error {
 		return fmt.Errorf("vendor tidak boleh kosong")
 	}
 	return nil
+}
+
+// CurrentOS mengembalikan nama OS sistem saat runtime ("linux", "windows", "darwin").
+func CurrentOS() string {
+	return NormalizeOS(runtime.GOOS)
+}
+
+// CurrentArch mengembalikan nama arsitektur sistem saat runtime yang ternormalisasi ("x64", "aarch64", "x86").
+func CurrentArch() string {
+	return NormalizeArch(runtime.GOARCH)
+}
+
+// NormalizeOS merapikan nama OS ke format standar.
+func NormalizeOS(osName string) string {
+	osLower := strings.ToLower(osName)
+	if osLower == "macos" || osLower == "osx" {
+		return "darwin"
+	}
+	return osLower
+}
+
+// NormalizeArch merapikan nama arsitektur ke format standar ("x64", "aarch64", "x86").
+func NormalizeArch(archName string) string {
+	archLower := strings.ToLower(archName)
+	switch archLower {
+	case "amd64", "x86_64", "x64":
+		return "x64"
+	case "arm64", "aarch64":
+		return "aarch64"
+	case "386", "i386", "x86":
+		return "x86"
+	default:
+		return archLower
+	}
+}
+
+// NormalizeArchWithBitness merapikan arsitektur dengan memperhitungkan hw_bitness (misal Azul API "x86" + 64 = "x64").
+func NormalizeArchWithBitness(archName string, bitness int) string {
+	archLower := strings.ToLower(archName)
+	if archLower == "x86" && bitness == 64 {
+		return "x64"
+	}
+	return NormalizeArch(archName)
+}
+
+// MatchOSArch mengecek apakah source cocok dengan target OS dan Arch (case-insensitive & ternormalisasi).
+func (s *JDKSource) MatchOSArch(targetOS, targetArch string) bool {
+	if targetOS != "" && s.OS != "" {
+		if NormalizeOS(s.OS) != NormalizeOS(targetOS) {
+			return false
+		}
+	}
+	if targetArch != "" && s.Arch != "" {
+		if NormalizeArch(s.Arch) != NormalizeArch(targetArch) {
+			return false
+		}
+	}
+	return true
 }
 
 // JDKInstalled merepresentasikan JDK yang sudah terinstall di sistem.
