@@ -8,17 +8,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"javawrapper/internal/config"
 )
 
-// InstallJDK mendownload tar.gz JDK dari URL, mengekstraknya ke installDir,
-// dan mencatat instalasi di jwrapper.json.
-func InstallJDK(version, url, installDir string) error {
+// InstallJDK mendownload tar.gz JDK dari URL, mengekstraknya ke
+// <binary-dir>/versions/jdk/v<version>/, dan mencatat instalasi di jwrapper.json.
+func InstallJDK(version, url, _ string) error {
 	if version == "" {
 		version = "latest"
 	}
+
+	// Path instalasi selalu di samping binary: ./versions/jdk/v<version>/
+	installDir := config.VersionInstallDir(version)
 
 	fmt.Printf("Mendownload JDK %s dari %s...\n", version, url)
 
@@ -42,8 +44,6 @@ func InstallJDK(version, url, installDir string) error {
 	defer gz.Close()
 
 	tarReader := tar.NewReader(gz)
-	var topDir string
-
 	for {
 		hdr, err := tarReader.Next()
 		if err == io.EOF {
@@ -52,18 +52,18 @@ func InstallJDK(version, url, installDir string) error {
 		if err != nil {
 			return fmt.Errorf("error baca tar: %w", err)
 		}
-		targetPath := filepath.Join(installDir, hdr.Name)
+
+		// Ekstrak langsung ke installDir, strip top-level dir dari archive
+		targetPath := stripTopDir(installDir, hdr.Name)
+
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if topDir == "" {
-				topDir = strings.TrimSuffix(hdr.Name, "/")
-			}
 			if err := os.MkdirAll(targetPath, os.FileMode(hdr.Mode)); err != nil {
 				return fmt.Errorf("mkdir %s: %w", targetPath, err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-				return fmt.Errorf("mkdir parent %s: %w", filepath.Dir(targetPath), err)
+				return fmt.Errorf("mkdir parent: %w", err)
 			}
 			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
 			if err != nil {
@@ -77,7 +77,7 @@ func InstallJDK(version, url, installDir string) error {
 		}
 	}
 
-	// Muat config dan catat instalasi
+	// Catat instalasi ke config
 	cfg, err := config.Load()
 	if err != nil {
 		cfg, err = config.LoadOrCreate()
@@ -86,9 +86,6 @@ func InstallJDK(version, url, installDir string) error {
 		}
 	}
 
-	installPath := filepath.Join(installDir, topDir)
-
-	// Cari nama distribusi dari sources
 	distName := "Unknown"
 	if src := cfg.GetSourceByVersion(version); src != nil {
 		distName = src.Name
@@ -96,7 +93,7 @@ func InstallJDK(version, url, installDir string) error {
 
 	cfg.Installed = append(cfg.Installed, config.JDKInstalled{
 		Version: version,
-		Path:    installPath,
+		Path:    installDir,
 		URL:     url,
 		Name:    distName,
 	})
@@ -108,6 +105,20 @@ func InstallJDK(version, url, installDir string) error {
 		return fmt.Errorf("gagal simpan config: %w", err)
 	}
 
-	fmt.Printf("✓ JDK %s berhasil diinstall di: %s\n", version, installPath)
+	fmt.Printf("✓ JDK %s berhasil diinstall di: %s\n", version, installDir)
 	return nil
+}
+
+// stripTopDir mengubah path dari archive (yang punya top-level dir) menjadi
+// path di bawah installDir langsung, sehingga isi archive di-extract flat ke installDir.
+// Contoh: "jbr-21.0.3/bin/java"  →  "<installDir>/bin/java"
+func stripTopDir(installDir, archivePath string) string {
+	// Cari separator pertama (top-level dir)
+	for i, c := range archivePath {
+		if c == '/' && i > 0 {
+			return filepath.Join(installDir, archivePath[i:])
+		}
+	}
+	// Tidak ada subdirektori (entry top-level dir itu sendiri)
+	return installDir
 }

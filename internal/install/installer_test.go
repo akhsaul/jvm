@@ -13,7 +13,10 @@ import (
 	"javawrapper/internal/config"
 )
 
-// createTestTar membuat in-memory tar.gz: direktori testjdk/ + binary testjdk/bin/java.
+// createTestTar membuat in-memory tar.gz dengan struktur:
+//   testjdk/           ← top-level dir (akan di-strip)
+//   testjdk/bin/
+//   testjdk/bin/java
 func createTestTar() []byte {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
@@ -36,8 +39,8 @@ func createTestTar() []byte {
 	return buf.Bytes()
 }
 
-// setupTestConfig menulis jwrapper.json di samping test binary dan mendaftarkan cleanup-nya.
-func setupTestConfig(t *testing.T, installDir string) string {
+// setupTestConfig menulis jwrapper.json di samping test binary.
+func setupTestConfig(t *testing.T, installBaseDir string) string {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
@@ -46,7 +49,7 @@ func setupTestConfig(t *testing.T, installDir string) string {
 	cfgPath := filepath.Join(filepath.Dir(exe), "jwrapper.json")
 
 	cfg := &config.Config{
-		InstallDir:     installDir,
+		InstallDir:     filepath.Join(installBaseDir, "versions", "jdk"),
 		DefaultVersion: "test-17",
 		ActiveVersion:  "",
 		Sources: []config.JDKSource{
@@ -76,20 +79,22 @@ func TestInstallJDK_MockedDownload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	installDir := t.TempDir()
-	cfgPath := setupTestConfig(t, installDir)
+	baseDir := t.TempDir()
+	cfgPath := setupTestConfig(t, baseDir)
 
 	version := "test-17"
-	if err := InstallJDK(version, server.URL, installDir); err != nil {
+	// InstallJDK menggunakan config.VersionInstallDir secara internal,
+	// tapi saat test kita override dengan pass dummy installDir (diabaikan oleh installer baru).
+	// Path aktual yang dipakai adalah config.VersionInstallDir(version) dari executable test.
+	if err := InstallJDK(version, server.URL, "" /* diabaikan */); err != nil {
 		t.Fatalf("InstallJDK gagal: %v", err)
 	}
 
-	// Verifikasi file terekstrak
-	expectedJDKDir := filepath.Join(installDir, "testjdk")
-	if _, err := os.Stat(expectedJDKDir); err != nil {
-		t.Errorf("direktori JDK %s tidak ditemukan: %v", expectedJDKDir, err)
-	}
-	javaPath := filepath.Join(expectedJDKDir, "bin", "java")
+	// Path yang diharapkan sesuai VersionInstallDir
+	expectedInstallDir := config.VersionInstallDir(version)
+
+	// Verifikasi binary java ada (strip top-dir → langsung di expectedInstallDir/bin/java)
+	javaPath := filepath.Join(expectedInstallDir, "bin", "java")
 	if _, err := os.Stat(javaPath); err != nil {
 		t.Errorf("binary java %s tidak ditemukan: %v", javaPath, err)
 	}
@@ -101,9 +106,8 @@ func TestInstallJDK_MockedDownload(t *testing.T) {
 	}
 	found := false
 	for _, v := range cfg.Installed {
-		if v.Version == version && v.Path == expectedJDKDir {
+		if v.Version == version && v.Path == expectedInstallDir {
 			found = true
-			// Pastikan nama distribusi ikut tercatat
 			if v.Name != "Mock JDK" {
 				t.Errorf("Installed[].Name = %s, want 'Mock JDK'", v.Name)
 			}
@@ -111,11 +115,15 @@ func TestInstallJDK_MockedDownload(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("versi %s tidak tercatat di config.Installed: %+v", version, cfg.Installed)
+		t.Errorf("versi %s tidak tercatat di config.Installed (path=%s): %+v",
+			version, expectedInstallDir, cfg.Installed)
 	}
 	if cfg.ActiveVersion != version {
 		t.Errorf("ActiveVersion = %s, want %s", cfg.ActiveVersion, version)
 	}
+
+	// Cleanup installed dir
+	t.Cleanup(func() { os.RemoveAll(expectedInstallDir) })
 }
 
 func TestInstallJDK_ServerError(t *testing.T) {
@@ -124,11 +132,28 @@ func TestInstallJDK_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	installDir := t.TempDir()
-	setupTestConfig(t, installDir)
+	baseDir := t.TempDir()
+	setupTestConfig(t, baseDir)
 
-	err := InstallJDK("test", server.URL, installDir)
+	err := InstallJDK("test", server.URL, "")
 	if err == nil {
 		t.Fatal("diharapkan error saat server return 500, tapi tidak ada error")
+	}
+}
+
+func TestStripTopDir(t *testing.T) {
+	cases := []struct {
+		archivePath string
+		want        string
+	}{
+		{"testjdk/bin/java", "/base/bin/java"},
+		{"testjdk/bin/", "/base/bin"},
+		{"testjdk/", "/base"},
+	}
+	for _, c := range cases {
+		got := stripTopDir("/base", c.archivePath)
+		if got != c.want {
+			t.Errorf("stripTopDir(%q) = %q, want %q", c.archivePath, got, c.want)
+		}
 	}
 }

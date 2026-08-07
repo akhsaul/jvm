@@ -16,7 +16,6 @@ type JDKSource struct {
 	URL     string `json:"url"`               // URL download tar.gz
 	OS      string `json:"os,omitempty"`      // target OS: "linux", "windows", "darwin"
 	Arch    string `json:"arch,omitempty"`    // target arch: "x64", "aarch64"
-	Note    string `json:"note,omitempty"`    // catatan opsional
 }
 
 // Validate memastikan field Vendor tidak mengandung spasi.
@@ -67,7 +66,6 @@ func defaultSources() []JDKSource {
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-21.0.3b465.3/jbr_jcef-21.0.3-linux-x64-b465.3.tar.gz",
 			OS:      "linux",
 			Arch:    "x64",
-			Note:    "JBR with JCEF for Linux x64",
 		},
 		{
 			Vendor:  "JetBrains",
@@ -76,7 +74,6 @@ func defaultSources() []JDKSource {
 			URL:     "https://github.com/JetBrains/JetBrainsRuntime/releases/download/jbr-release-17.0.10b1087.23/jbr_jcef-17.0.10-linux-x64-b1087.23.tar.gz",
 			OS:      "linux",
 			Arch:    "x64",
-			Note:    "JBR with JCEF for Linux x64",
 		},
 	}
 }
@@ -89,6 +86,17 @@ func defaultConfigPath() string {
 		return filepath.Join(cwd, "jwrapper.json")
 	}
 	return filepath.Join(filepath.Dir(exe), "jwrapper.json")
+}
+
+// VersionInstallDir mengembalikan path instalasi untuk versi tertentu:
+// <dir-binary>/versions/jdk/v<version>/
+func VersionInstallDir(version string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		cwd, _ := os.Getwd()
+		return filepath.Join(cwd, "versions", "jdk", "v"+version)
+	}
+	return filepath.Join(filepath.Dir(exe), "versions", "jdk", "v"+version)
 }
 
 // Load memuat konfigurasi dari jwrapper.json di samping binary.
@@ -105,7 +113,7 @@ func LoadOrCreate() (*Config, error) {
 	exe, _ := os.Executable()
 	dir := filepath.Dir(exe)
 	cfg = &Config{
-		InstallDir:     filepath.Join(dir, "jdk"),
+		InstallDir:     filepath.Join(dir, "versions", "jdk"),
 		DefaultVersion: "21",
 		ActiveVersion:  "",
 		Sources:        defaultSources(),
