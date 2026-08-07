@@ -141,15 +141,19 @@ func defaultConfigPath() string {
 	return filepath.Join(filepath.Dir(exe), "jwrapper.json")
 }
 
-// VersionInstallDir mengembalikan path instalasi untuk versi tertentu:
-// <dir-binary>/versions/jdk/v<version>/
-func VersionInstallDir(version string) string {
+// VersionInstallDir mengembalikan path instalasi untuk versi dan build tertentu:
+// <dir-binary>/versions/jdk/v<version>-<build>/
+func VersionInstallDir(version, build string) string {
+	folderName := "v" + version
+	if build != "" && build != "-" {
+		folderName = fmt.Sprintf("v%s-%s", version, build)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		cwd, _ := os.Getwd()
-		return filepath.Join(cwd, "versions", "jdk", "v"+version)
+		return filepath.Join(cwd, "versions", "jdk", folderName)
 	}
-	return filepath.Join(filepath.Dir(exe), "versions", "jdk", "v"+version)
+	return filepath.Join(filepath.Dir(exe), "versions", "jdk", folderName)
 }
 
 // Load memuat konfigurasi dari jwrapper.json di samping binary.

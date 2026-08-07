@@ -83,15 +83,13 @@ func TestInstallJDK_MockedDownload(t *testing.T) {
 	cfgPath := setupTestConfig(t, baseDir)
 
 	version := "test-17"
-	// InstallJDK menggunakan config.VersionInstallDir secara internal,
-	// tapi saat test kita override dengan pass dummy installDir (diabaikan oleh installer baru).
-	// Path aktual yang dipakai adalah config.VersionInstallDir(version) dari executable test.
-	if err := InstallJDK(version, server.URL, "" /* diabaikan */); err != nil {
+	build := "b100"
+	if err := InstallJDK(version, build, server.URL, "" /* diabaikan */); err != nil {
 		t.Fatalf("InstallJDK gagal: %v", err)
 	}
 
 	// Path yang diharapkan sesuai VersionInstallDir
-	expectedInstallDir := config.VersionInstallDir(version)
+	expectedInstallDir := config.VersionInstallDir(version, build)
 
 	// Verifikasi binary java ada (strip top-dir → langsung di expectedInstallDir/bin/java)
 	javaPath := filepath.Join(expectedInstallDir, "bin", "java")
@@ -135,7 +133,7 @@ func TestInstallJDK_ServerError(t *testing.T) {
 	baseDir := t.TempDir()
 	setupTestConfig(t, baseDir)
 
-	err := InstallJDK("test", server.URL, "")
+	err := InstallJDK("test", "", server.URL, "")
 	if err == nil {
 		t.Fatal("diharapkan error saat server return 500, tapi tidak ada error")
 	}

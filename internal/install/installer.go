@@ -13,16 +13,16 @@ import (
 )
 
 // InstallJDK mendownload tar.gz JDK dari URL, mengekstraknya ke
-// <binary-dir>/versions/jdk/v<version>/, dan mencatat instalasi di jwrapper.json.
-func InstallJDK(version, url, _ string) error {
+// <binary-dir>/versions/jdk/v<version>-<build>/, dan mencatat instalasi di jwrapper.json.
+func InstallJDK(version, build, url, _ string) error {
 	if version == "" {
 		version = "latest"
 	}
 
-	// Path instalasi selalu di samping binary: ./versions/jdk/v<version>/
-	installDir := config.VersionInstallDir(version)
+	// Path instalasi selalu di samping binary: ./versions/jdk/v<version>-<build>/
+	installDir := config.VersionInstallDir(version, build)
 
-	fmt.Printf("Mendownload JDK %s dari %s...\n", version, url)
+	fmt.Printf("Mendownload JDK %s (%s) dari %s...\n", version, build, url)
 
 	resp, err := http.Get(url)
 	if err != nil {

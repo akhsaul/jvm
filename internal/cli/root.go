@@ -157,7 +157,7 @@ Contoh:
 				}
 			}
 
-			return install.InstallJDK(src.Version, src.URL, cfg.InstallDir)
+			return install.InstallJDK(src.Version, src.Build, src.URL, cfg.InstallDir)
 		},
 	}
 
